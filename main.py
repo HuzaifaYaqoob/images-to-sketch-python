@@ -123,14 +123,18 @@ class ImageProcessing():
     def process_image(self):
         for r_img in self.all_selected_images:
             image_name = r_img.split('/')[-1].split('.')[0]
-            if r_img in self.checked_images:
+            if r_img not in self.checked_images:
                 for i in image_name:
                     if i.isdigit():
                         image_name = image_name.replace(i , '')
                 image_name = image_name.replace('--' , '')
+                image_name = image_name.replace('(' , '')
+                image_name = image_name.replace(')' , '')
 
                 if len(image_name) > 0 and image_name[-1] == '-':
                     image_name = image_name.replace('-' , '' , -1)
+                if len(image_name) > 0 and image_name[-1] == ' ':
+                    image_name = image_name.replace(' ' , '' , -1)
             
                 if len(image_name) == 0:
                     image_name = 'random'
@@ -183,12 +187,6 @@ class ImageProcessing():
                 2
             )
 
-
-            
-            # x_offset=y_offset=0
-            # text_image = cv2.cvtColor(text_image , cv2.COLOR_BGR2GRAY)
-            # final_image[0:0,0:1920] = text_image[0:50,0:1920]
-            # print(final_image.shape , text_image.shape)
             is_folder = os.path.isdir('./outputImages')
             if not is_folder:
                 os.mkdir('outputImages')
@@ -198,6 +196,8 @@ class ImageProcessing():
         self.img_list.delete(0 , tk.END)
         self.item_selected = False
         self.add_oper_btns()
+        pwd_path = os.getcwd()
+        os.startfile(f'{pwd_path}/outputImages')
         
 
 
