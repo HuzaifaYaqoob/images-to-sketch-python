@@ -1,11 +1,17 @@
 
 
 
+from tkinter import ttk
 import cv2
 import tkinter as tk
 from tkinter import filedialog
+from tkinter import ttk
 import numpy
 import os
+import time
+import asyncio
+import threading
+import datetime
 
 class ImageProcessing():
     def __init__(self, root_w):
@@ -15,12 +21,20 @@ class ImageProcessing():
         self.root.geometry('800x500+200+100')
         self.root.config(background='#fff')
         self.root.resizable(False, False)
+        self.all_threads = {}
+
+        self.progress_value = 1
 
         self.all_selected_images = []
         self.item_selected = False
 
         self.checked_images = []
-    
+    def change_title(self):
+        self.h_heading['text'] = 'Please wait, Loading...'
+
+    def update_prog_value(self):
+        self.progress_bar['value'] += self.progress_value
+
 
     def window_header(self):
         self.header = tk.Frame(self.root, bg='white')
@@ -42,18 +56,39 @@ class ImageProcessing():
         self.convert_btn.pack(side=tk.RIGHT , ipadx=10)
 
         self.images_section()
+        self.show_progress_bar()
 
     def images_section(self):
         self.images_s = tk.Frame(self.root, bg='lightgray')
-        self.images_s.pack(fill=tk.BOTH)
+        self.images_s.pack(fill=tk.BOTH,  expand=True)
+
+        self.lbl_frame = tk.Frame(self.images_s, background='white')
+        self.lbl_frame.pack(fill=tk.X)
+        self.instruction_lbl = tk.Label(self.lbl_frame, text='Double click to check or un-check list item for printing the image name on Output Image', background='white', font=('sans-serif', 10))
+        self.instruction_lbl.pack(side=tk.LEFT)
+
+
+
+        scrollbar = tk.Scrollbar(self.images_s)
+        scrollbar.pack(side = tk.RIGHT, fill = tk.Y)
 
         self.img_list = tk.Listbox(self.images_s, font=('sans-serif' , 12))
-        self.img_list.pack(fill=tk.X)
+        self.img_list.pack(fill=tk.BOTH, expand=True)
         self.img_list.bind('<<ListboxSelect>>', self.onselect)
-
+        self.img_list.bind('<Double-Button>', self.mark_as_checked)
+        
+        self.img_list.config(yscrollcommand = scrollbar.set)
+        scrollbar.config(command = self.img_list.yview)
+        
         self.operations = tk.Frame(self.images_s, bg='white')
         self.operations.pack(fill=tk.X, ipadx=5, ipady=5)
+
         self.add_oper_btns()
+    
+    def show_progress_bar(self):
+        self.progress_bar = ttk.Progressbar(self.root, orient='horizontal', mode='determinate')
+        self.progress_bar['value'] = 0
+        self.progress_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def onselect(self, evnt):
         self.item_selected = True
@@ -68,136 +103,217 @@ class ImageProcessing():
             s_item = self.img_list.get(s_item[0])
             self.dlt_btn = tk.Button(self.operations, text='Delete selected item', command=self.delete_selected_item)
             self.dlt_btn.pack(side=tk.RIGHT , padx=5)
-            self.dlt_btn = tk.Button(self.operations, text='Checked' if s_item in self.checked_images else 'Check', command=self.mark_as_checked)
-            self.dlt_btn.pack(side=tk.RIGHT)
         pass
 
-    def mark_as_checked(self):
+    def mark_as_checked(self, evt):
         s_item  = self.img_list.curselection()
         s_item = self.img_list.get(s_item[0])
-        self.checked_images.append(s_item)
+        get_index = self.all_selected_images.index(s_item)
+
+        if s_item in self.checked_images:
+            self.img_list.itemconfig(get_index , {'bg' : 'white'})
+            self.checked_images.remove(s_item)
+        else:
+            self.img_list.itemconfig(get_index , {'bg' : 'lightgray'})
+            self.checked_images.append(s_item)
+        self.img_list.selection_clear(0, tk.END)
+        self.item_selected = None
         self.add_oper_btns()
 
     def delete_selected_item(self):
-        s_item  = self.img_list.curselection()
-        self.img_list.delete(s_item[0])
-        self.add_oper_btns()
+        if self.item_selected:
+            try:
+                s_item  = self.img_list.curselection()
+                self.img_list.delete(s_item[0])
+                self.add_oper_btns()
+                self.item_selected = None
+            except:
+                pass
 
 
     def add_images_handler(self):
         all_images = filedialog.askopenfilenames(
             title='Select Images Files', 
             filetypes=[
-                ("Image File",'.jpg'),
                 ("Image File",'.png'),
-                ("Image File",'.jpeg'),
-                ("Image File",'.webp'),
             ]
         )
-        self.all_selected_images = all_images
+
+        self.all_selected_images += all_images
         self.show_images_list()
 
     def show_images_list(self):
+        self.progress_bar['value'] = 0
         for index , img in enumerate(self.all_selected_images):
-            # new_text = self.
             self.img_list.insert(index, img)
 
     def convert_images_handler(self):
-        self.process_image()
+        time_now = str(datetime.datetime.now().strftime('%m%H%S'))
+        self.all_threads[time_now] =  threading.Thread(name=time_now, target=self.process_image)
+        all_keys = self.all_threads.keys()
+        all_keys = list(all_keys)
+        self.all_threads[all_keys[-1]].setDaemon(True)
+        self.all_threads[all_keys[-1]].start()
+
 
     def start(self):
         pass
 
-    def white_image(self, current_img=None):
-        c_img_width = 500
-        if current_img is not None:
-            c_img_width = current_img.shape[1]
-        
-        image_height = 50
-        image_width = c_img_width
-        number_of_color_channels = 3
-        color = (255,255,255)
+    def get_A4_Paper(self, noc=3):
+        image_width = 910
+        image_height = 1200
+        color = (255,255,255, 255)
+        pixel_array = numpy.full((image_height, image_width, noc), color, dtype=numpy.uint8)
+        return pixel_array
+
+    def get_white_bg(self, width=None, height=None ):
+        image_width = width
+        image_height = height
+        number_of_color_channels = 4
+        color = (255,255,255, 255)
         pixel_array = numpy.full((image_height, image_width, number_of_color_channels), color, dtype=numpy.uint8)
         return pixel_array
 
     def process_image(self):
+        self.progress_bar['value'] = 0
+        progress_inc = 100 / len(self.all_selected_images)
+        self.progress_value = progress_inc
+        self.h_heading['text'] = 'Please wait, Loading...'
         for r_img in self.all_selected_images:
-            image_name = r_img.split('/')[-1].split('.')[0]
-            if r_img not in self.checked_images:
-                for i in image_name:
-                    if i.isdigit():
-                        image_name = image_name.replace(i , '')
-                image_name = image_name.replace('--' , '')
-                image_name = image_name.replace('(' , '')
-                image_name = image_name.replace(')' , '')
+            self.progress_bar['value'] += progress_inc
 
-                if len(image_name) > 0 and image_name[-1] == '-':
-                    image_name = image_name.replace('-' , '' , -1)
-                if len(image_name) > 0 and image_name[-1] == ' ':
-                    image_name = image_name.replace(' ' , '' , -1)
-            
-                if len(image_name) == 0:
-                    image_name = 'random'
+            img_name_splt = r_img.split('/')[-1].split('.')
+            image_name = img_name_splt[0]
+            img_ext = img_name_splt[-1]
 
-            img_ext = r_img.split('/')[-1].split('.')[-1]
-            img = cv2.imread(r_img , cv2.IMREAD_UNCHANGED)
-            gray_img = cv2.cvtColor(img , cv2.COLOR_BGR2GRAY)
-            inverted_img = 255-gray_img
-            blur_img = cv2.GaussianBlur(inverted_img , (21,21) , 0)
-            inverted_blur = 255-blur_img
+            replace_w = {
+                '--' : '',
+                '(' : '',
+                ')' : '',
+                '_' : '',
+                '  ' : '',
+                '0' : '',
+                '1' : '',
+                '2' : '',
+                '3' : '',
+                '4' : '',
+                '5' : '',
+                '6' : '',
+                '7' : '',
+                '8' : '',
+                '9' : '',
+            }
+            for key, value in replace_w.items():
+                image_name = image_name.replace(key , value)
 
-            pencil_sketch = cv2.divide(gray_img , inverted_blur, scale=256.0)
+            if len(image_name) > 0 and image_name[-1] == '-':
+                image_name = image_name.replace('-' , '' , -1)
+        
+            if len(image_name) == 0:
+                image_name = 'random'
 
-            final_image = pencil_sketch
+            try:
+                img = cv2.imread(r_img , cv2.IMREAD_UNCHANGED)
+                gray_img = cv2.cvtColor(img , cv2.COLOR_BGR2GRAY)
+                inverted_img = 255-gray_img
+                blur_img = cv2.GaussianBlur(inverted_img , (21,21) , 0)
+                inverted_blur = 255-blur_img
 
-            if img_ext == 'png':
+                final_image = cv2.divide(gray_img , inverted_blur, scale=256.0)
+                # if img_ext == 'png':
                 *_, alpha = cv2.split(img)
                 final_image = cv2.merge((final_image, final_image, final_image, alpha))
+                
+                fm_height = final_image.shape[0]
+                fm_width = final_image.shape[1]
 
 
-            print_able_name = image_name
-            for i in print_able_name:
-                if i.isdigit():
-                    print_able_name = print_able_name.replace(i , '')
+                a4_paper = self.get_A4_Paper(
+                    noc=img.shape[2]
+                )
+                a4_height = a4_paper.shape[0]
+                a4_width  = a4_paper.shape[1]
 
-            print_able_name = print_able_name.replace('--' , ' ')
-            print_able_name = print_able_name.replace('(' , ' ')
-            print_able_name = print_able_name.replace(')' , ' ')
-            print_able_name = print_able_name.replace('_' , ' ')
-            print_able_name = print_able_name.replace('.' , ' ')
-            print_able_name = print_able_name.replace('  ' , ' ')
+                if fm_width > a4_width or fm_height > a4_height:
+                    scale_percent = 60
+                    new_width = int(fm_width * scale_percent / 100)
+                    new_height = int(fm_height * scale_percent / 100)
+                    dim = (new_width, new_height)
+                    final_image = cv2.resize(final_image, dim, interpolation=cv2.INTER_AREA)
+                    fm_width = new_width
+                    fm_height = new_height
 
-            print_able_name = print_able_name.replace('-' , ' ')
+                if fm_width > a4_width or fm_height > a4_height:
+                    scale_percent = 70
+                    new_width = int(fm_width * scale_percent / 100)
+                    new_height = int(fm_height * scale_percent / 100)
+                    dim = (new_width, new_height)
+                    final_image = cv2.resize(final_image, dim, interpolation=cv2.INTER_AREA)
+                    fm_width = new_width
+                    fm_height = new_height
+
+                y1 = (a4_height - fm_height ) // 2
+                y2 = fm_height + y1
+                x1 = (a4_width - fm_width) // 2
+                x2 = fm_width + x1
+                a4_paper[y1:y2, x1:x2] = final_image
+
+                trans_mask = a4_paper[:,:,3] == 0
+                a4_paper[trans_mask] = [255, 255, 255, 255]
+
+
+                if True if r_img in self.checked_images else False:
+                    print_able_name = image_name.replace('-' , ' ')
+                    get_text_size=  cv2.getTextSize(print_able_name , cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+                    print(get_text_size)
+                    hd = (a4_paper.shape[1] - get_text_size[0]) / 2
+                    cv2.putText(
+                        a4_paper, 
+                        print_able_name,
+                        (int(hd),70), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 
+                        1,
+                        (0,0,255),
+                        2,
+                        2
+                    )
+
+                is_img_exist = os.path.exists(f'./outputImages/{image_name}.png')
+                if is_img_exist:
+                    image_name += str(int(progress_inc))
+
+                if not os.path.isdir('./outputImages'):
+                    os.mkdir('outputImages')
+                cv2.imwrite(f'./outputImages/{image_name}.png' , a4_paper)
+
+     
+
+            except Exception as err:
+                print(err)
             
-            if len(print_able_name) == 0:
-                print_able_name = 'random'
+            try:
+                idx = self.img_list.get(0, tk.END).index(r_img)
+                self.img_list.delete(idx)
+            except:
+                pass
 
-            get_text_size=  cv2.getTextSize(print_able_name , cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
-            
-            # text_image = self.white_image(current_img=final_image)
-            hd = (final_image.shape[1] - get_text_size[0]) / 2
-            cv2.putText(
-                final_image, 
-                print_able_name,
-                (int(hd),30), 
-                cv2.FONT_HERSHEY_SIMPLEX, 
-                1,
-                (0,0,0),
-                2,
-                2
-            )
 
-            is_folder = os.path.isdir('./outputImages')
-            if not is_folder:
-                os.mkdir('outputImages')
-            cv2.imwrite(f'./outputImages/{image_name}.png' , final_image)
-
+        self.h_heading['text'] = 'Convert Images to Sketch'
+        self.progress_bar['value'] = 100
         self.all_selected_images = []
         self.img_list.delete(0 , tk.END)
         self.item_selected = False
         self.add_oper_btns()
+        try:
+            self.open_folder()
+        except:
+            pass
+
+    def open_folder(self):
         pwd_path = os.getcwd()
         os.startfile(f'{pwd_path}/outputImages')
+
+
         
 
 
