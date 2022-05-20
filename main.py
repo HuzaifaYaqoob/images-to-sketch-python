@@ -5,6 +5,7 @@ from tkinter import ttk
 import cv2
 import tkinter as tk
 from tkinter import filedialog
+from tkinter import messagebox
 from tkinter import ttk
 import numpy
 import os
@@ -16,7 +17,6 @@ import datetime
 class ImageProcessing():
     def __init__(self, root_w):
         self.root = root_w
-        self.image_path = 'F:/Image_Processing/Code/InputImages/1.jpeg'
         self.root.title('Image Processing')
         self.root.geometry('800x500+200+100')
         self.root.config(background='#fff')
@@ -28,7 +28,8 @@ class ImageProcessing():
         self.all_selected_images = []
         self.item_selected = False
 
-        self.checked_images = []
+        self.check_box_value = tk.BooleanVar()
+
     def change_title(self):
         self.h_heading['text'] = 'Please wait, Loading...'
 
@@ -64,8 +65,19 @@ class ImageProcessing():
 
         self.lbl_frame = tk.Frame(self.images_s, background='white')
         self.lbl_frame.pack(fill=tk.X)
-        self.instruction_lbl = tk.Label(self.lbl_frame, text='Double click to check or un-check list item for printing the image name on Output Image', background='white', font=('sans-serif', 10))
-        self.instruction_lbl.pack(side=tk.LEFT)
+
+
+        self.check_btn_imname = tk.Checkbutton(
+            self.lbl_frame, 
+            text='Print Name on top of Image', 
+            background='white', 
+            font=('sans-serif', 12),
+            onvalue=True,
+            offvalue=False,
+            variable=self.check_box_value
+        )
+        self.check_btn_imname.pack(fill=tk.X, side=tk.LEFT)
+
 
 
 
@@ -75,7 +87,6 @@ class ImageProcessing():
         self.img_list = tk.Listbox(self.images_s, font=('sans-serif' , 12))
         self.img_list.pack(fill=tk.BOTH, expand=True)
         self.img_list.bind('<<ListboxSelect>>', self.onselect)
-        self.img_list.bind('<Double-Button>', self.mark_as_checked)
         
         self.img_list.config(yscrollcommand = scrollbar.set)
         scrollbar.config(command = self.img_list.yview)
@@ -105,20 +116,6 @@ class ImageProcessing():
             self.dlt_btn.pack(side=tk.RIGHT , padx=5)
         pass
 
-    def mark_as_checked(self, evt):
-        s_item  = self.img_list.curselection()
-        s_item = self.img_list.get(s_item[0])
-        get_index = self.all_selected_images.index(s_item)
-
-        if s_item in self.checked_images:
-            self.img_list.itemconfig(get_index , {'bg' : 'white'})
-            self.checked_images.remove(s_item)
-        else:
-            self.img_list.itemconfig(get_index , {'bg' : 'lightgray'})
-            self.checked_images.append(s_item)
-        self.img_list.selection_clear(0, tk.END)
-        self.item_selected = None
-        self.add_oper_btns()
 
     def delete_selected_item(self):
         if self.item_selected:
@@ -180,6 +177,13 @@ class ImageProcessing():
         self.progress_value = progress_inc
         self.h_heading['text'] = 'Please wait, Loading...'
         for r_img in self.all_selected_images:
+            if ' ' in r_img:
+                messagebox.showerror('Error' , 'Spaces are not allowed in Image path \ne.g /path/path with space/ not allowed \n Removing all images, Please select new one') 
+                self.all_selected_images = []
+                self.img_list.delete(0 , tk.END)
+                self.item_selected = False
+                
+                break
             self.progress_bar['value'] += progress_inc
 
             img_name_splt = r_img.split('/')[-1].split('.')
@@ -234,7 +238,7 @@ class ImageProcessing():
                 a4_height = a4_paper.shape[0]
                 a4_width  = a4_paper.shape[1]
 
-                if fm_width > a4_width or fm_height > a4_height:
+                if fm_width > a4_width or fm_height > a4_height - 150:
                     scale_percent = 60
                     new_width = int(fm_width * scale_percent / 100)
                     new_height = int(fm_height * scale_percent / 100)
@@ -243,7 +247,7 @@ class ImageProcessing():
                     fm_width = new_width
                     fm_height = new_height
 
-                if fm_width > a4_width or fm_height > a4_height:
+                if fm_width > a4_width or fm_height > a4_height - 150:
                     scale_percent = 70
                     new_width = int(fm_width * scale_percent / 100)
                     new_height = int(fm_height * scale_percent / 100)
@@ -262,19 +266,32 @@ class ImageProcessing():
                 a4_paper[trans_mask] = [255, 255, 255, 255]
 
 
-                if True if r_img in self.checked_images else False:
+                if self.check_box_value.get():
                     print_able_name = image_name.replace('-' , ' ')
-                    get_text_size=  cv2.getTextSize(print_able_name , cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
-                    print(get_text_size)
+                    font_size = 4
+                    font_weight = 9
+                    get_text_size=  cv2.getTextSize(print_able_name , cv2.FONT_HERSHEY_SIMPLEX, font_size, 2)[0]
+
+                    if get_text_size[0] > a4_paper.shape[1]:
+                        font_size = 2
+                        font_weight = 5
+                        get_text_size=  cv2.getTextSize(print_able_name , cv2.FONT_HERSHEY_SIMPLEX, font_size, 2)[0]
+                    
+                    if get_text_size[0] > a4_paper.shape[1]:
+                        font_size = 1
+                        font_weight = 2
+                        get_text_size=  cv2.getTextSize(print_able_name , cv2.FONT_HERSHEY_SIMPLEX, font_size, 2)[0]
+                    
                     hd = (a4_paper.shape[1] - get_text_size[0]) / 2
+                    print_able_name = print_able_name.capitalize()
                     cv2.putText(
                         a4_paper, 
                         print_able_name,
-                        (int(hd),70), 
+                        (int(hd),120), 
                         cv2.FONT_HERSHEY_SIMPLEX, 
-                        1,
-                        (0,0,255),
-                        2,
+                        font_size,
+                        (0,0,0, 255),
+                        font_weight,
                         2
                     )
 
@@ -285,8 +302,6 @@ class ImageProcessing():
                 if not os.path.isdir('./outputImages'):
                     os.mkdir('outputImages')
                 cv2.imwrite(f'./outputImages/{image_name}.png' , a4_paper)
-
-     
 
             except Exception as err:
                 print(err)
